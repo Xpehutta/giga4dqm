@@ -1,0 +1,18 @@
+# Optional observability: Langfuse — use `docker compose -p langfuse-giga4dqm -f docker-compose.langfuse.yml`
+# (see header in that file; do not omit `-p` or the app postgres service can be replaced).
+services:
+  postgres:
+    image: postgres:16
+    container_name: giga4dqm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: giga4dqm
+      POSTGRES_USER: giga4dqm
+      POSTGRES_PASSWORD: giga4dqm
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
