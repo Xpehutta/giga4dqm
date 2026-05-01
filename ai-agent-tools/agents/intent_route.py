@@ -118,7 +118,7 @@ _SYSTEM = (
     "column value** or bad data, and needs **column lineage from metadata** followed "
     "by **multiple suggested read-only SELECTs** along upstream sources to diagnose "
     "(not catalog-only, not bare lineage-only). If they name **one** suspect column "
-    "(e.g. \"error in a value risk_category\") or paste single-column SELECT, scope "
+    "(e.g. \"error in value for column status_code\") or paste single-column SELECT, scope "
     "investigation to **that column only** unless they ask otherwise.\n"
     "- both: metadata **and** one row-level SELECT — use when the user needs definitions "
     "**and** a single query result **without** pasted suspicious SQL, or without needing "
@@ -126,6 +126,37 @@ _SYSTEM = (
     "Reply with a single JSON object only (no markdown fences).\n\n"
     + _route_parser.get_format_instructions()
 )
+
+
+_QUALIFIED_REL_RE = re.compile(
+    # table.column or schema.table.column (unquoted Postgres-like identifiers)
+    r"\b[a-zA-Z_][\w]*\.[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)?\b",
+)
+
+
+def _explicit_lineage_request(low: str) -> bool:
+    """
+    User clearly asks for DDL lineage for a qualified table/column, without pasted SQL or
+    data-quality suspicion. Avoids LLM misroutes (e.g. column names overlapping prompt examples).
+    """
+    if not re.search(r"\b(lineage|upstream|downstream|provenance|came\s+from)\b", low):
+        return False
+    if _QUALIFIED_REL_RE.search(low) is None:
+        return False
+    if _investigation_heuristic(low):
+        return False
+    if (
+        "possible error" in low
+        or "wrong value" in low
+        or "incorrect value" in low
+        or "invalid value" in low
+        or "error in a value" in low
+        or "error in the value" in low
+    ):
+        return False
+    if "investigate" in low:
+        return False
+    return True
 
 
 def _investigation_heuristic(low: str) -> bool:
@@ -211,6 +242,13 @@ def route_db_question(question: str) -> RouteKind:
     if not q:
         _LOG.info("route_decision route=catalog via=empty")
         return "catalog"
+    low = q.lower()
+    if _explicit_lineage_request(low):
+        _LOG.info(
+            "route_decision route=lineage via=explicit_lineage question_chars=%s",
+            len(q),
+        )
+        return "lineage"
     hinted = _heuristic_route(q)
     if hinted is not None:
         _LOG.info(
